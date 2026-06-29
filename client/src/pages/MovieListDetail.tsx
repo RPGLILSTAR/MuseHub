@@ -1,0 +1,131 @@
+import { useState, useEffect } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { HiArrowLeft, HiFilm, HiXMark } from 'react-icons/hi2';
+import { collectionApi, type UserList } from '@/services/collectionApi';
+import { movieApi } from '@/services/api';
+import type { Movie } from '@/types';
+
+export default function MovieListDetail() {
+  const { id } = useParams<{ id: string }>();
+  const [list, setList] = useState<UserList | null>(null);
+  const [movies, setMovies] = useState<Movie[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!id) return;
+    
+    const fetchListDetail = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const listData = await collectionApi.getListDetail(id);
+        setList(listData);
+        
+        if (listData.items && listData.items.length > 0) {
+          const moviesData = await Promise.all(
+            listData.items.map(itemId => movieApi.getDetail(Number(itemId)).catch(() => null))
+          );
+          setMovies(moviesData.filter(Boolean) as Movie[]);
+        }
+      } catch (err) {
+        console.error('Failed to load list:', err);
+        setError('加载失败');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchListDetail();
+  }, [id]);
+
+  const handleRemoveMovie = async (movieId: number) => {
+    if (!id) return;
+    try {
+      await collectionApi.removeFromList(id, String(movieId));
+      setMovies(prev => prev.filter(m => m.id !== movieId));
+      if (list) {
+        setList({
+          ...list,
+          items: list.items.filter(itemId => itemId !== String(movieId))
+        });
+      }
+    } catch (err) {
+      console.error('Failed to remove movie:', err);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen pt-24 px-4">
+        <div className="max-w-6xl mx-auto">
+          <div className="h-20 bg-white/5 rounded-xl animate-pulse-soft mb-4" />
+          <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-24 bg-white/5 rounded-xl animate-pulse-soft" />)}</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !list) {
+    return (
+      <div className="min-h-screen pt-24 flex flex-col items-center justify-center gap-4 px-4">
+        <p className="text-6xl">🎬</p>
+        <p className="text-gray-400 text-lg">{error || '片单未找到'}</p>
+        <Link to="/my-movies" className="px-5 py-2.5 rounded-xl bg-violet-500 text-white text-sm hover:bg-violet-400 transition-colors">返回我的影视</Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen pt-20 pb-12 px-4 sm:px-6 max-w-6xl mx-auto">
+      <Link to="/my-movies" className="inline-flex items-center gap-2 px-4 py-2 rounded-xl glass text-sm text-white hover:bg-white/20 transition-colors mb-6">
+        <HiArrowLeft className="w-4 h-4" /> 返回
+      </Link>
+
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
+        <div className="flex items-center gap-4 mb-2">
+          <HiFilm className="w-6 h-6 text-violet-400" />
+          <h1 className="text-3xl font-bold text-white">{list.name}</h1>
+        </div>
+        {list.description && <p className="text-gray-400 text-sm ml-10">{list.description}</p>}
+        <p className="text-xs text-gray-500 ml-10 mt-2">{movies.length} 部 · 更新于 {new Date(list.updatedAt).toLocaleDateString('zh-CN')}</p>
+      </motion.div>
+
+      {movies.length === 0 ? (
+        <div className="text-center py-20 glass rounded-2xl">
+          <p className="text-4xl mb-3">🎬</p>
+          <p className="text-gray-400">片单中暂无影视</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {movies.map((movie, i) => (
+            <motion.div
+              key={movie.id}
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: i * 0.05 }}
+              className="glass rounded-xl p-4 flex items-center gap-4 group hover:bg-white/5 transition-all"
+            >
+              {movie.posterPath && (
+                <img src={movie.posterPath} alt={movie.title} className="w-12 h-16 rounded-lg object-cover border border-white/10" />
+              )}
+              <div className="flex-1 min-w-0">
+                <Link to={`/movies/${movie.id}`} className="text-white font-medium hover:text-violet-300 transition-colors line-clamp-2">
+                  {movie.title}
+                </Link>
+                <p className="text-xs text-gray-500 mt-1 truncate">{movie.releaseDate || '上映日期未知'}</p>
+              </div>
+              <button
+                onClick={() => handleRemoveMovie(movie.id)}
+                className="p-2 rounded-lg text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+              >
+                <HiXMark className="w-4 h-4" />
+              </button>
+            </motion.div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
